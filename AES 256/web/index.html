@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AES-256 — Chiffrement dans le navigateur</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+
+    /* --- thème clair (par défaut) --- */
+    --bg: #eef0f4;
+    --surface: #ffffff;
+    --surface-2: #e6e9ee;
+    --text: #171a22;
+    --text-muted: #5b6472;
+    --accent: #9a6e22;
+    --accent-strong: #7d5a1b;
+    --accent-on: #fffaf0;
+    --line: #d6dae1;
+    --danger: #b3392c;
+    --danger-bg: #fbe9e6;
+
+    --font-head: 'Space Grotesk', 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171f;
+      --surface: #1b202b;
+      --surface-2: #222937;
+      --text: #eef0f3;
+      --text-muted: #99a2b5;
+      --accent: #d1a054;
+      --accent-strong: #e6b76c;
+      --accent-on: #211705;
+      --line: #2a3040;
+      --danger: #ff8577;
+      --danger-bg: #2c1a17;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171f;
+    --surface: #1b202b;
+    --surface-2: #222937;
+    --text: #eef0f3;
+    --text-muted: #99a2b5;
+    --accent: #d1a054;
+    --accent-strong: #e6b76c;
+    --accent-on: #211705;
+    --line: #2a3040;
+    --danger: #ff8577;
+    --danger-bg: #2c1a17;
+  }
+
+  * { box-sizing: border-box; }
+
+  html {
+    scroll-padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-head);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100%;
+  }
+
+  .wrap {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: clamp(28px, 6vw, 56px) 20px calc(60px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    margin-bottom: 18px;
+  }
+  .mark .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent);
+    flex: none;
+  }
+
+  h1 {
+    font-family: var(--font-head);
+    font-weight: 600;
+    font-size: clamp(30px, 6vw, 42px);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+  }
+
+  .lede {
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--text-muted);
+    max-width: 52ch;
+    margin: 0 0 28px;
+  }
+
+  .notice {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    background: var(--danger-bg);
+    border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+    color: var(--danger);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    margin-bottom: 32px;
+  }
+  .notice svg { flex: none; margin-top: 2px; }
+  .notice strong { color: inherit; }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    margin-bottom: 18px;
+  }
+
+  .field-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .key-row {
+    display: flex;
+    gap: 8px;
+  }
+  .key-input {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.01em;
+    padding: 11px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .key-input:focus-visible,
+  textarea:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .key-status {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+  .key-status.invalid { color: var(--danger); }
+
+  .icon-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px; height: 40px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color .15s ease, transform .1s ease;
+  }
+  .icon-btn:hover { border-color: var(--accent); }
+  .icon-btn:active { transform: scale(0.96); }
+
+  .segmented {
+    display: inline-flex;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 3px;
+    margin: 24px 0 16px;
+  }
+  .segmented button {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-head);
+    font-size: 14px;
+    font-weight: 500;
+    padding: 9px 18px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+  }
+  .segmented button.active {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  }
+
+  label.section-label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 4px 0 8px;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 120px;
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    line-height: 1.5;
+    padding: 14px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--text);
+  }
+
+  .primary-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    padding: 12px 20px;
+    background: var(--accent);
+    color: var(--accent-on);
+    border: none;
+    border-radius: 9px;
+    font-family: var(--font-head);
+    font-weight: 600;
+    font-size: 14.5px;
+    cursor: pointer;
+    transition: background .15s ease, transform .1s ease;
+  }
+  .primary-btn:hover { background: var(--accent-strong); }
+  .primary-btn:active { transform: scale(0.98); }
+  .primary-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .error-msg {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--danger);
+    font-family: var(--font-mono);
+    display: none;
+  }
+  .error-msg.show { display: block; }
+
+  .result {
+    margin-top: 20px;
+    display: none;
+  }
+  .result.show { display: block; }
+  .result-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .result-head .label { font-size: 12.5px; color: var(--text-muted); }
+  .copy-btn {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text-muted);
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--text); }
+  .result-box {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.6;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px;
+    word-break: break-all;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .result-box.plain { word-break: break-word; white-space: pre-wrap; }
+
+  .swap-hint {
+    margin-top: 12px;
+    font-size: 12.5px;
+  }
+  .swap-hint button {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  details.howitworks {
+    margin-top: 8px;
+  }
+  details.howitworks summary {
+    cursor: pointer;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    padding: 4px 0;
+  }
+  details.howitworks[open] summary { color: var(--text); }
+  .howitworks-body {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    padding: 10px 0 4px;
+  }
+  .howitworks-body code {
+    font-family: var(--font-mono);
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12.5px;
+  }
+
+  footer {
+    margin-top: 36px;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+
+  @media (max-width: 420px) {
+    .key-row { flex-wrap: wrap; }
+    .key-input { flex-basis: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="mark"><span class="dot"></span>AES-256 · CBC · fait à la main</div>
+
+  <h1>Chiffrement, directement dans le navigateur</h1>
+  <p class="lede">
+    Une réécriture en JavaScript de ton implémentation Python — même S-Box, même
+    cadencement de clé, même logique bloc par bloc. Rien ne quitte cet onglet :
+    tout le calcul se fait sur ton appareil.
+  </p>
+
+  <div class="notice">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 9V13M12 17H12.01M10.29 3.86L1.82 18A2 2 0 0 0 3.55 21H20.45A2 2 0 0 0 22.18 18L13.71 3.86A2 2 0 0 0 10.29 3.86Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span><strong>Outil pédagogique.</strong> Ne t'en sers pas pour de vraies données sensibles — utilise une bibliothèque auditée (WebCrypto, pycryptodome…) en production.</span>
+  </div>
+
+  <div class="panel">
+    <div class="field-label"><span>Clé — 256 bits, en hexadécimal (64 caractères)</span></div>
+    <div class="key-row">
+      <input type="text" class="key-input" id="keyInput" spellcheck="false" autocomplete="off">
+      <button class="icon-btn" id="genKeyBtn" title="Générer une nouvelle clé aléatoire">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 4V9H4.582M4.582 9C5.24585 7.35812 6.43568 5.98066 7.96395 5.10035C9.49221 4.22005 11.2696 3.88979 13.0122 4.16294C14.7548 4.4361 16.3517 5.29814 17.5411 6.60398C18.7305 7.90983 19.4463 9.5842 19.5691 11.354M20 20V15H19.418M19.418 15C18.7541 16.6419 17.5643 18.0193 16.036 18.8997C14.5078 19.78 12.7304 20.1102 10.9878 19.8371C9.24518 19.5639 7.6483 18.7019 6.45887 17.396C5.26945 16.0902 4.55371 14.4158 4.43091 12.646" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="icon-btn" id="copyKeyBtn" title="Copier la clé">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="9" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M5 15H4C3.44772 15 3 14.5523 3 14V4C3 3.44772 3.44772 3 4 3H14C14.5523 3 15 3.44772 15 4V5" stroke="currentColor" stroke-width="1.6"/></svg>
+      </button>
+    </div>
+    <div class="key-status" id="keyStatus">Clé générée automatiquement au chargement de la page.</div>
+  </div>
+
+  <div class="segmented" role="tablist">
+    <button id="tabEncrypt" class="active" role="tab" aria-selected="true">Chiffrer</button>
+    <button id="tabDecrypt" role="tab" aria-selected="false">Déchiffrer</button>
+  </div>
+
+  <div class="panel">
+    <label class="section-label" id="inputLabel" for="mainInput">Texte à chiffrer</label>
+    <textarea id="mainInput" placeholder="Écris ton message ici…"></textarea>
+
+    <button class="primary-btn" id="actionBtn">Chiffrer le message</button>
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div class="result" id="resultBlock">
+      <div class="result-head">
+        <span class="label" id="resultLabel">Résultat</span>
+        <button class="copy-btn" id="copyResultBtn">Copier</button>
+      </div>
+      <div class="result-box" id="resultBox"></div>
+      <div class="swap-hint" id="swapHint" style="display:none;">
+        <button id="swapBtn">Utiliser ce résultat pour déchiffrer →</button>
+      </div>
+    </div>
+
+    <details class="howitworks">
+      <summary>Comment ça marche</summary>
+      <div class="howitworks-body">
+        Chaque chiffrement génère un <strong>IV</strong> (vecteur d'initialisation) aléatoire de
+        16 octets, placé au début du résultat — c'est pour ça que chiffrer deux fois le même
+        message donne deux résultats différents. Le mode <strong>CBC</strong> chaîne chaque bloc
+        de 16 octets avec le précédent via un <code>xor_bytes</code>, avant de passer par
+        <code>encrypt_block</code>. La clé ne sert qu'à toi : si tu la perds, le message chiffré
+        n'est plus récupérable par personne.
+      </div>
+    </details>
+  </div>
+
+  <footer>Implémentation AES-256 · aucune donnée envoyée à un serveur</footer>
+</div>
+
+<script>
+/* ===================== Portage AES-256 (identique à src/) ===================== */
+const SBOX = [
+  0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
+  0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
+  0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,
+  0x04,0xc7,0x23,0xc3,0x18,0x96,0x05,0x9a,0x07,0x12,0x80,0xe2,0xeb,0x27,0xb2,0x75,
+  0x09,0x83,0x2c,0x1a,0x1b,0x6e,0x5a,0xa0,0x52,0x3b,0xd6,0xb3,0x29,0xe3,0x2f,0x84,
+  0x53,0xd1,0x00,0xed,0x20,0xfc,0xb1,0x5b,0x6a,0xcb,0xbe,0x39,0x4a,0x4c,0x58,0xcf,
+  0xd0,0xef,0xaa,0xfb,0x43,0x4d,0x33,0x85,0x45,0xf9,0x02,0x7f,0x50,0x3c,0x9f,0xa8,
+  0x51,0xa3,0x40,0x8f,0x92,0x9d,0x38,0xf5,0xbc,0xb6,0xda,0x21,0x10,0xff,0xf3,0xd2,
+  0xcd,0x0c,0x13,0xec,0x5f,0x97,0x44,0x17,0xc4,0xa7,0x7e,0x3d,0x64,0x5d,0x19,0x73,
+  0x60,0x81,0x4f,0xdc,0x22,0x2a,0x90,0x88,0x46,0xee,0xb8,0x14,0xde,0x5e,0x0b,0xdb,
+  0xe0,0x32,0x3a,0x0a,0x49,0x06,0x24,0x5c,0xc2,0xd3,0xac,0x62,0x91,0x95,0xe4,0x79,
+  0xe7,0xc8,0x37,0x6d,0x8d,0xd5,0x4e,0xa9,0x6c,0x56,0xf4,0xea,0x65,0x7a,0xae,0x08,
+  0xba,0x78,0x25,0x2e,0x1c,0xa6,0xb4,0xc6,0xe8,0xdd,0x74,0x1f,0x4b,0xbd,0x8b,0x8a,
+  0x70,0x3e,0xb5,0x66,0x48,0x03,0xf6,0x0e,0x61,0x35,0x57,0xb9,0x86,0xc1,0x1d,0x9e,
+  0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,
+  0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16,
+];
+const INV_SBOX = new Array(256).fill(0);
+SBOX.forEach((v, i) => { INV_SBOX[v] = i; });
+
+function bytesToMatrix(data) {
+  const m = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+  for (let i = 0; i < 16; i++) m[i % 4][Math.floor(i / 4)] = data[i];
+  return m;
+}
+function matrixToBytes(m) {
+  const out = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) out[i] = m[i % 4][Math.floor(i / 4)];
+  return out;
+}
+function xorBytes(a, b) {
+  const out = new Uint8Array(a.length);
+  for (let i = 0; i < a.length; i++) out[i] = a[i] ^ b[i];
+  return out;
+}
+function xtime(byte) {
+  byte <<= 1;
+  if (byte & 0x100) byte ^= 0x11B;
+  return byte & 0xFF;
+}
+function galoisMultiply(a, b) {
+  let result = 0;
+  a &= 0xFF;
+  for (let i = 0; i < 8; i++) {
+    if (b & 1) result ^= a;
+    a = xtime(a);
+    b >>= 1;
+  }
+  return result & 0xFF;
+}
+function subByte(b) { return SBOX[b]; }
+function invSubByte(b) { return INV_SBOX[b]; }
+function subBytes(state) {
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) state[r][c] = subByte(state[r][c]);
+  return state;
+}
+function invSubBytes(state) {
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) state[r][c] = invSubByte(state[r][c]);
+  return state;
+}
+function shiftRows(state) {
+  for (let r = 1; r < 4; r++) state[r] = state[r].slice(r).concat(state[r].slice(0, r));
+  return state;
+}
+function invShiftRows(state) {
+  for (let r = 1; r < 4; r++) {
+    state[r] = state[r].slice(state[r].length - r).concat(state[r].slice(0, state[r].length - r));
+  }
+  return state;
+}
+function mixSingleColumn(a) {
+  const r = [0,0,0,0];
+  r[0] = xtime(a[0]) ^ (xtime(a[1]) ^ a[1]) ^ a[2] ^ a[3];
+  r[1] = a[0] ^ xtime(a[1]) ^ (xtime(a[2]) ^ a[2]) ^ a[3];
+  r[2] = a[0] ^ a[1] ^ xtime(a[2]) ^ (xtime(a[3]) ^ a[3]);
+  r[3] = (xtime(a[0]) ^ a[0]) ^ a[1] ^ a[2] ^ xtime(a[3]);
+  return r;
+}
+function mixColumns(state) {
+  for (let c = 0; c < 4; c++) {
+    let col = [state[0][c], state[1][c], state[2][c], state[3][c]];
+    col = mixSingleColumn(col);
+    for (let r = 0; r < 4; r++) state[r][c] = col[r];
+  }
+  return state;
+}
+function invMixSingleColumn(a) {
+  const r = [0,0,0,0];
+  r[0] = galoisMultiply(a[0],14) ^ galoisMultiply(a[1],11) ^ galoisMultiply(a[2],13) ^ galoisMultiply(a[3],9);
+  r[1] = galoisMultiply(a[0],9)  ^ galoisMultiply(a[1],14) ^ galoisMultiply(a[2],11) ^ galoisMultiply(a[3],13);
+  r[2] = galoisMultiply(a[0],13) ^ galoisMultiply(a[1],9)  ^ galoisMultiply(a[2],14) ^ galoisMultiply(a[3],11);
+  r[3] = galoisMultiply(a[0],11) ^ galoisMultiply(a[1],13) ^ galoisMultiply(a[2],9)  ^ galoisMultiply(a[3],14);
+  return r;
+}
+function invMixColumns(state) {
+  for (let c = 0; c < 4; c++) {
+    let col = [state[0][c], state[1][c], state[2][c], state[3][c]];
+    col = invMixSingleColumn(col);
+    for (let r = 0; r < 4; r++) state[r][c] = col[r];
+  }
+  return state;
+}
+function addRoundKey(state, roundKey) {
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) state[r][c] ^= roundKey[r][c];
+  return state;
+}
+function rotWord(word) { return word.slice(1).concat(word.slice(0,1)); }
+function subWord(word) { return word.map(subByte); }
+function rcon(index) {
+  let rc = 1;
+  for (let i = 0; i < index - 1; i++) rc = xtime(rc);
+  return [rc, 0, 0, 0];
+}
+function keyExpansion(key) {
+  const Nk = 8, Nr = 14, Nb = 4;
+  const w = [];
+  for (let i = 0; i < Nk; i++) w.push(Array.from(key.slice(4*i, 4*i+4)));
+  for (let i = Nk; i < Nb * (Nr + 1); i++) {
+    let temp = w[i-1].slice();
+    if (i % Nk === 0) {
+      temp = subWord(rotWord(temp));
+      const rc = rcon(Math.floor(i / Nk));
+      temp = temp.map((t, idx) => t ^ rc[idx]);
+    } else if (Nk > 6 && i % Nk === 4) {
+      temp = subWord(temp);
+    }
+    w.push(w[i-Nk].map((v, idx) => v ^ temp[idx]));
+  }
+  const roundKeys = [];
+  for (let r = 0; r <= Nr; r++) {
+    const words = w.slice(r*Nb, (r+1)*Nb);
+    const m = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+    words.forEach((word, c) => { for (let row = 0; row < 4; row++) m[row][c] = word[row]; });
+    roundKeys.push(m);
+  }
+  return roundKeys;
+}
+function aesRound(state, roundKey) {
+  state = subBytes(state); state = shiftRows(state); state = mixColumns(state);
+  return addRoundKey(state, roundKey);
+}
+function aesFinalRound(state, roundKey) {
+  state = subBytes(state); state = shiftRows(state);
+  return addRoundKey(state, roundKey);
+}
+function encryptBlock(block, key) {
+  const roundKeys = keyExpansion(key);
+  let state = bytesToMatrix(block);
+  state = addRoundKey(state, roundKeys[0]);
+  for (let round = 1; round < 14; round++) state = aesRound(state, roundKeys[round]);
+  state = aesFinalRound(state, roundKeys[14]);
+  return matrixToBytes(state);
+}
+function invAesRound(state, roundKey) {
+  state = invShiftRows(state); state = invSubBytes(state);
+  state = addRoundKey(state, roundKey);
+  return invMixColumns(state);
+}
+function invAesFinalRound(state, roundKey) {
+  state = invShiftRows(state); state = invSubBytes(state);
+  return addRoundKey(state, roundKey);
+}
+function decryptBlock(block, key) {
+  const roundKeys = keyExpansion(key);
+  let state = bytesToMatrix(block);
+  state = addRoundKey(state, roundKeys[14]);
+  for (let round = 13; round >= 1; round--) state = invAesRound(state, roundKeys[round]);
+  state = invAesFinalRound(state, roundKeys[0]);
+  return matrixToBytes(state);
+}
+function pad(data) {
+  const padLen = 16 - (data.length % 16);
+  const out = new Uint8Array(data.length + padLen);
+  out.set(data, 0);
+  out.fill(padLen, data.length);
+  return out;
+}
+function unpad(data) {
+  const padLen = data[data.length - 1];
+  if (padLen < 1 || padLen > 16) throw new Error("Padding invalide");
+  for (let i = data.length - padLen; i < data.length; i++) {
+    if (data[i] !== padLen) throw new Error("Padding invalide");
+  }
+  return data.slice(0, data.length - padLen);
+}
+function randomBytes(n) {
+  const arr = new Uint8Array(n);
+  crypto.getRandomValues(arr);
+  return arr;
+}
+function aesEncrypt(data, key) {
+  const iv = randomBytes(16);
+  const padded = pad(data);
+  const out = new Uint8Array(16 + padded.length);
+  out.set(iv, 0);
+  let previous = iv;
+  for (let i = 0; i < padded.length; i += 16) {
+    let block = padded.slice(i, i + 16);
+    block = xorBytes(block, previous);
+    const encBlock = encryptBlock(block, key);
+    out.set(encBlock, 16 + i);
+    previous = encBlock;
+  }
+  return out;
+}
+function aesDecrypt(data, key) {
+  const iv = data.slice(0, 16);
+  const ciphertext = data.slice(16);
+  const out = new Uint8Array(ciphertext.length);
+  let previous = iv;
+  for (let i = 0; i < ciphertext.length; i += 16) {
+    const block = ciphertext.slice(i, i + 16);
+    const decBlock = decryptBlock(block, key);
+    out.set(xorBytes(decBlock, previous), i);
+    previous = block;
+  }
+  return unpad(out);
+}
+
+/* ===================== Utilitaires hex / texte ===================== */
+function bytesToHex(bytes) {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+function hexToBytes(hex) {
+  const clean = hex.trim().replace(/\s+/g, "");
+  if (clean.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(clean)) return null;
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < clean.length; i += 2) out[i/2] = parseInt(clean.substr(i, 2), 16);
+  return out;
+}
+
+/* ===================== Interface ===================== */
+const keyInput = document.getElementById("keyInput");
+const keyStatus = document.getElementById("keyStatus");
+const genKeyBtn = document.getElementById("genKeyBtn");
+const copyKeyBtn = document.getElementById("copyKeyBtn");
+const tabEncrypt = document.getElementById("tabEncrypt");
+const tabDecrypt = document.getElementById("tabDecrypt");
+const inputLabel = document.getElementById("inputLabel");
+const mainInput = document.getElementById("mainInput");
+const actionBtn = document.getElementById("actionBtn");
+const errorMsg = document.getElementById("errorMsg");
+const resultBlock = document.getElementById("resultBlock");
+const resultLabel = document.getElementById("resultLabel");
+const resultBox = document.getElementById("resultBox");
+const copyResultBtn = document.getElementById("copyResultBtn");
+const swapHint = document.getElementById("swapHint");
+const swapBtn = document.getElementById("swapBtn");
+
+let mode = "encrypt"; // ou "decrypt"
+
+function setKey(bytes) {
+  keyInput.value = bytesToHex(bytes);
+  validateKey();
+}
+function validateKey() {
+  const bytes = hexToBytes(keyInput.value);
+  if (!bytes || bytes.length !== 32) {
+    keyStatus.textContent = "La clé doit contenir exactement 64 caractères hexadécimaux (32 octets).";
+    keyStatus.classList.add("invalid");
+    return null;
+  }
+  keyStatus.textContent = "Clé valide (256 bits).";
+  keyStatus.classList.remove("invalid");
+  return bytes;
+}
+
+genKeyBtn.addEventListener("click", () => {
+  setKey(randomBytes(32));
+  keyStatus.textContent = "Nouvelle clé générée. Conserve-la si tu veux redéchiffrer plus tard.";
+});
+copyKeyBtn.addEventListener("click", () => copyText(keyInput.value, copyKeyBtn));
+keyInput.addEventListener("input", validateKey);
+
+function setMode(newMode) {
+  mode = newMode;
+  const isEncrypt = mode === "encrypt";
+  tabEncrypt.classList.toggle("active", isEncrypt);
+  tabDecrypt.classList.toggle("active", !isEncrypt);
+  tabEncrypt.setAttribute("aria-selected", String(isEncrypt));
+  tabDecrypt.setAttribute("aria-selected", String(!isEncrypt));
+  inputLabel.textContent = isEncrypt ? "Texte à chiffrer" : "Texte chiffré (hexadécimal)";
+  mainInput.placeholder = isEncrypt ? "Écris ton message ici…" : "Colle ici le résultat hexadécimal…";
+  actionBtn.textContent = isEncrypt ? "Chiffrer le message" : "Déchiffrer le message";
+  resultLabel.textContent = isEncrypt ? "Résultat chiffré (hex)" : "Message déchiffré";
+  hideResult();
+  hideError();
+}
+tabEncrypt.addEventListener("click", () => setMode("encrypt"));
+tabDecrypt.addEventListener("click", () => setMode("decrypt"));
+
+function showError(msg) {
+  errorMsg.textContent = msg;
+  errorMsg.classList.add("show");
+}
+function hideError() {
+  errorMsg.classList.remove("show");
+}
+function hideResult() {
+  resultBlock.classList.remove("show");
+  swapHint.style.display = "none";
+}
+
+actionBtn.addEventListener("click", () => {
+  hideError();
+  const key = validateKey();
+  if (!key) { showError("Corrige la clé avant de continuer."); return; }
+
+  if (mode === "encrypt") {
+    const text = mainInput.value;
+    if (!text) { showError("Écris un message à chiffrer."); return; }
+    try {
+      const bytes = new TextEncoder().encode(text);
+      const cipher = aesEncrypt(bytes, key);
+      resultBox.classList.remove("plain");
+      resultBox.textContent = bytesToHex(cipher);
+      resultBlock.classList.add("show");
+      swapHint.style.display = "block";
+    } catch (e) {
+      showError("Erreur pendant le chiffrement : " + e.message);
+    }
+  } else {
+    const hex = mainInput.value;
+    const bytes = hexToBytes(hex);
+    if (!bytes) { showError("Le texte chiffré doit être en hexadécimal valide."); return; }
+    if (bytes.length < 16 || (bytes.length - 16) % 16 !== 0) {
+      showError("Longueur invalide pour un message chiffré par ce système (IV + blocs de 16 octets).");
+      return;
+    }
+    try {
+      const plain = aesDecrypt(bytes, key);
+      resultBox.classList.add("plain");
+      resultBox.textContent = new TextDecoder().decode(plain);
+      resultBlock.classList.add("show");
+      swapHint.style.display = "none";
+    } catch (e) {
+      showError("Déchiffrement impossible : clé incorrecte ou message corrompu.");
+    }
+  }
+});
+
+swapBtn.addEventListener("click", () => {
+  mainInput.value = resultBox.textContent;
+  setMode("decrypt");
+});
+
+async function copyText(text, btn) {
+  const original = btn.innerHTML;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    // repli silencieux : selection manuelle
+  }
+  if (btn === copyKeyBtn) return;
+  btn.textContent = "Copié";
+  setTimeout(() => { btn.textContent = original; }, 1200);
+}
+copyResultBtn.addEventListener("click", () => copyText(resultBox.textContent, copyResultBtn));
+
+/* Initialisation : une clé aléatoire au chargement */
+setKey(randomBytes(32));
+</script>
+</body>
+</html>
